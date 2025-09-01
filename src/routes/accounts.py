@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from typing import cast
 
-from fastapi import APIRouter, Depends, status, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, status, HTTPException, BackgroundTasks, Request
 from sqlalchemy import select, delete
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -66,6 +66,7 @@ router = APIRouter()
     }
 )
 async def register_user(
+        request: Request,
         background_tasks: BackgroundTasks,
         user_data: UserRegistrationRequestSchema,
         db: AsyncSession = Depends(get_db),
@@ -129,10 +130,15 @@ async def register_user(
             detail="An error occurred during user creation."
         ) from e
     else:
+        activation_link = str(
+            request.url_for(
+                "activate_account"
+            )
+        ) + f"?token={activation_token}&email={new_user.email}"
         background_tasks.add_task(
             email_sender.send_activation_email,
             new_user.email,
-            "http://127.0.0.1/accounts/activate/",
+            activation_link,
         )
         return UserRegistrationResponseSchema.model_validate(new_user)
 
@@ -169,6 +175,7 @@ async def register_user(
     },
 )
 async def activate_account(
+        request: Request,
         background_tasks: BackgroundTasks,
         activation_data: UserActivationRequestSchema,
         db: AsyncSession = Depends(get_db),
@@ -227,8 +234,7 @@ async def activate_account(
     await db.delete(token_record)
     await db.commit()
 
-    login_link = "http://127.0.0.1/accounts/login/"
-
+    login_link = str(request.url_for("login"))
     background_tasks.add_task(
         email_sender.send_activation_complete_email,
         str(activation_data.email),
@@ -249,6 +255,7 @@ async def activate_account(
     status_code=status.HTTP_200_OK,
 )
 async def request_password_reset_token(
+        request: Request,
         background_tasks: BackgroundTasks,
         data: PasswordResetRequestSchema,
         db: AsyncSession = Depends(get_db),
@@ -281,10 +288,14 @@ async def request_password_reset_token(
     reset_token = PasswordResetTokenModel(user_id=cast(int, user.id))
     db.add(reset_token)
     await db.commit()
+
+    reset_complete_link = str(
+        request.url_for("reset_password_complete")
+    ) + f"?token={reset_token.token}&email={data.email}"
     background_tasks.add_task(
         email_sender.send_password_reset_email,
         str(data.email),
-        "http://127.0.0.1/accounts/password-reset-complete/",
+        reset_complete_link,
     )
 
     return MessageResponseSchema(
