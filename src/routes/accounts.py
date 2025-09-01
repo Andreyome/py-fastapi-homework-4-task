@@ -129,11 +129,10 @@ async def register_user(
             detail="An error occurred during user creation."
         ) from e
     else:
-        activation_link = "http://127.0.0.1/accounts/activate/"
         background_tasks.add_task(
             email_sender.send_activation_email,
             new_user.email,
-            activation_link,
+            "http://127.0.0.1/accounts/activate/",
         )
         return UserRegistrationResponseSchema.model_validate(new_user)
 
@@ -282,11 +281,10 @@ async def request_password_reset_token(
     reset_token = PasswordResetTokenModel(user_id=cast(int, user.id))
     db.add(reset_token)
     await db.commit()
-    reset_complete_link = "http://127.0.0.1/accounts/password-reset-complete/"
     background_tasks.add_task(
         email_sender.send_password_reset_email,
         str(data.email),
-        reset_complete_link,
+        "http://127.0.0.1/accounts/password-reset-complete/",
     )
 
     return MessageResponseSchema(
